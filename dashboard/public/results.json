@@ -1,0 +1,61 @@
+{
+ "tool": "Marketing Correlation",
+ "version": 1,
+ "source": "llm_mentions_vs_direct.csv",
+ "period_name": "week",
+ "lag": 0,
+ "dropped": [],
+ "small_n": 12,
+ "divergence": 0.2,
+ "rows": 8,
+ "labels": [
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8"
+ ],
+ "columns": [
+  {
+   "name": "llm_mentions",
+   "values": [
+    12.0,
+    15.0,
+    19.0,
+    22.0,
+    26.0,
+    31.0,
+    35.0,
+    96.0
+   ]
+  },
+  {
+   "name": "direct_sessions",
+   "values": [
+    310.0,
+    340.0,
+    395.0,
+    420.0,
+    460.0,
+    505.0,
+    540.0,
+    560.0
+   ]
+  }
+ ],
+ "pairs": [
+  {
+   "a": "llm_mentions",
+   "b": "direct_sessions",
+   "n": 8,
+   "pearson": 0.74671842588135,
+   "spearman": 1.0,
+   "small_sample": true,
+   "diverge": true,
+   "difference": 0.25328157411865004
+  }
+ ]
+}

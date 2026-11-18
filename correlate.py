@@ -6,6 +6,7 @@ Standard library only. No installs.
     python correlate.py examples/platform_vs_crm.csv
     python correlate.py my_data.csv --lag 1
     python correlate.py my_data.csv --drop 8
+    python correlate.py my_data.csv --json results.json
 
 The first column is treated as the date (or week, or period) and is only used
 for labels and --drop. Every other column must be numbers.
@@ -13,7 +14,9 @@ for labels and --drop. Every other column must be numbers.
 
 import argparse
 import csv
+import json
 import math
+import os
 import sys
 from itertools import combinations
 
@@ -72,7 +75,7 @@ def read_table(path):
             except ValueError:
                 sys.exit(f'Row {line}, column "{name}": "{raw}" is not a number.')
         columns[name] = vals
-    return labels, columns
+    return labels, columns, header[0].strip()
 
 
 def shift(x, y, lag):
@@ -88,6 +91,49 @@ def fmt(v):
     return "n/a " if v is None else f"{v:5.2f}"
 
 
+def analyze(columns, lag):
+    """Every pair, with the numbers and warnings. Same math the printout uses."""
+    pairs = []
+    for a, b in combinations(columns, 2):
+        x, y = shift(columns[a], columns[b], lag)
+        n = len(x)
+        r = rho = None
+        if n >= 3:
+            r, rho = pearson(x, y), spearman(x, y)
+        gap = abs(r - rho) if r is not None and rho is not None else None
+        pairs.append({
+            "a": a,
+            "b": b,
+            "n": n,
+            "pearson": r,
+            "spearman": rho,
+            "small_sample": n >= 3 and n < SMALL_N,
+            "diverge": gap is not None and gap > DIVERGENCE,
+            "difference": gap,
+        })
+    return pairs
+
+
+def write_json(path, source, period_name, labels, columns, args, pairs):
+    out = {
+        "tool": "Marketing Correlation",
+        "version": 1,
+        "source": os.path.basename(source),
+        "period_name": period_name,
+        "lag": args.lag,
+        "dropped": args.drop,
+        "small_n": SMALL_N,
+        "divergence": DIVERGENCE,
+        "rows": len(labels),
+        "labels": labels,
+        "columns": [{"name": k, "values": v} for k, v in columns.items()],
+        "pairs": pairs,
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(out, f, indent=1)
+        f.write("\n")
+
+
 def main():
     p = argparse.ArgumentParser(description="Pearson and Spearman for every pair of columns.")
     p.add_argument("file", help="CSV with a date column first, then two or more numeric columns")
@@ -96,37 +142,44 @@ def main():
                         "(1 = does the second column follow the first by one period?)")
     p.add_argument("--drop", action="append", default=[],
                    help="leave out a row by its date label, e.g. --drop 8 (repeatable)")
+    p.add_argument("--json", metavar="PATH",
+                   help="also write everything to a results file, e.g. --json results.json "
+                        "(the dashboard reads it)")
     args = p.parse_args()
 
-    labels, columns = read_table(args.file)
+    labels, columns, period_name = read_table(args.file)
     keep = [i for i, lab in enumerate(labels) if lab not in args.drop]
     if args.drop:
         missing = set(args.drop) - set(labels)
         if missing:
             sys.exit(f"--drop: no row labeled {', '.join(sorted(missing))}.")
         columns = {k: [v[i] for i in keep] for k, v in columns.items()}
+        labels = [labels[i] for i in keep]
 
     if args.lag:
         print(f"Lag: {args.lag} period(s). Second column shifted.")
     if args.drop:
         print(f"Dropped rows: {', '.join(args.drop)}")
 
-    for a, b in combinations(columns, 2):
-        x, y = shift(columns[a], columns[b], args.lag)
-        n = len(x)
-        print(f"\n{a}  vs  {b}")
+    pairs = analyze(columns, args.lag)
+    for pr in pairs:
+        r, rho, n = pr["pearson"], pr["spearman"], pr["n"]
+        print(f"\n{pr['a']}  vs  {pr['b']}")
         if n < 3:
             print("  Not enough rows to compare after the lag.")
             continue
-        r, rho = pearson(x, y), spearman(x, y)
         print(f"  Pearson  {fmt(r)}")
         print(f"  Spearman {fmt(rho)}")
         print(f"  n        {n}")
-        if n < SMALL_N:
+        if pr["small_sample"]:
             print(f"  ! Small sample ({n} rows). Treat this as a rough read, not a finding.")
-        if r is not None and rho is not None and abs(r - rho) > DIVERGENCE:
-            print(f"  ! Pearson and Spearman differ by {abs(r - rho):.2f}. "
+        if pr["diverge"]:
+            print(f"  ! Pearson and Spearman differ by {pr['difference']:.2f}. "
                   "Usually one outlier period or a curved relationship. Look at the rows.")
+
+    if args.json:
+        write_json(args.json, args.file, period_name, labels, columns, args, pairs)
+        print(f"\nWrote {args.json}")
 
 
 if __name__ == "__main__":

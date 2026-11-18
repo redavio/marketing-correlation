@@ -78,10 +78,27 @@ Options:
   and conversions land Friday, the two may not line up until you shift one.
 - `--drop 8` leaves out a row by its date label, so you can see how much one
   period is doing.
+- `--json results.json` also writes everything to a results file for the
+  dashboard.
 
 Or skip all of this. Paste two columns into an LLM and ask for a Pearson and a
 Spearman correlation. You'll have it in about three seconds. The script is here
 for when you want it repeatable.
+
+## See it in a dashboard
+
+`--json` writes everything the script found (the numbers, the warnings and the
+rows) to one results file. The React dashboard in `dashboard/` reads it.
+
+```
+python3 correlate.py examples/llm_mentions_vs_direct.csv --json dashboard/public/results.json
+cd dashboard && npm install && npm run dev
+```
+
+It has three tabs: Results, Your data, and How to read it. To share it with your
+team, deploy the `dashboard` folder to Vercel (or any static host) with your
+`results.json` in `public/`. Anyone can also open a results file with the
+"Open results file" button, or point at one with `?src=`.
 
 ## The examples
 
@@ -116,8 +133,12 @@ rounds to 1.00.
 
 ## Make it yours
 
-Adapt it to your own setup.
+Marketing Correlation is a starting point, not a finished product. Fork it and change anything:
 
+- **Brand the dashboard.** It ships unbranded. Set your name and logo in
+  `dashboard/src/brand.ts` and your colors at the top of `dashboard/src/style.css`.
+- **Change the screens or build your own app.** Everything on screen comes from
+  one file, `results.json`. Build your own React app, internal tool or AI agent on it.
 - **Any input:** an ad platform export, HubSpot, Salesforce, GA4, a database
   table, an API. If it's numbers by date, it works. Claude Code will wire up
   the connection for you.
