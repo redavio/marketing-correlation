@@ -56,14 +56,14 @@ def spearman(x, y):
     return pearson(ranks(x), ranks(y))
 
 
-def read_table(path):
-    with open(path, newline="", encoding="utf-8-sig") as f:
-        rows = [r for r in csv.reader(f) if any(cell.strip() for cell in r)]
+def parse_table(rows):
+    """Header plus data rows (lists of strings) -> labels, columns, period name. Raises ValueError."""
+    rows = [r for r in rows if any(cell.strip() for cell in r)]
     if len(rows) < 3:
-        sys.exit("Need a header row plus at least two rows of data.")
+        raise ValueError("Need a header row plus at least two rows of data.")
     header, body = rows[0], rows[1:]
     if len(header) < 3:
-        sys.exit("Need a date column plus at least two numeric columns.")
+        raise ValueError("Need a date column plus at least two numeric columns.")
     labels = [r[0] for r in body]
     columns = {}
     for c, name in enumerate(header[1:], start=1):
@@ -73,9 +73,18 @@ def read_table(path):
             try:
                 vals.append(float(raw))
             except ValueError:
-                sys.exit(f'Row {line}, column "{name}": "{raw}" is not a number.')
+                raise ValueError(f'Row {line}, column "{name}": "{raw}" is not a number.') from None
         columns[name] = vals
     return labels, columns, header[0].strip()
+
+
+def read_table(path):
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        rows = list(csv.reader(f))
+    try:
+        return parse_table(rows)
+    except ValueError as e:
+        sys.exit(str(e))
 
 
 def shift(x, y, lag):
@@ -114,14 +123,15 @@ def analyze(columns, lag):
     return pairs
 
 
-def write_json(path, source, period_name, labels, columns, args, pairs):
-    out = {
+def build_results(source, period_name, labels, columns, lag, dropped, pairs):
+    """Everything in one dict: the results.json the dashboard reads."""
+    return {
         "tool": "Marketing Correlation",
         "version": 1,
         "source": os.path.basename(source),
         "period_name": period_name,
-        "lag": args.lag,
-        "dropped": args.drop,
+        "lag": lag,
+        "dropped": list(dropped),
         "small_n": SMALL_N,
         "divergence": DIVERGENCE,
         "rows": len(labels),
@@ -129,6 +139,24 @@ def write_json(path, source, period_name, labels, columns, args, pairs):
         "columns": [{"name": k, "values": v} for k, v in columns.items()],
         "pairs": pairs,
     }
+
+
+def results_from_csv_text(text, source="data.csv", lag=0, drop=()):
+    """Run the whole tool on CSV text (for apps): the same dict --json writes. Raises ValueError."""
+    labels, columns, period_name = parse_table(list(csv.reader(text.lstrip("\ufeff").splitlines())))
+    drop = [d for d in drop if d]
+    missing = set(drop) - set(labels)
+    if missing:
+        raise ValueError(f"No row labeled {', '.join(sorted(missing))} to drop.")
+    if drop:
+        keep = [i for i, lab in enumerate(labels) if lab not in drop]
+        columns = {k: [v[i] for i in keep] for k, v in columns.items()}
+        labels = [labels[i] for i in keep]
+    return build_results(source, period_name, labels, columns, lag, drop, analyze(columns, lag))
+
+
+def write_json(path, source, period_name, labels, columns, args, pairs):
+    out = build_results(source, period_name, labels, columns, args.lag, args.drop, pairs)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=1)
         f.write("\n")

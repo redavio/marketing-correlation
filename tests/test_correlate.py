@@ -81,3 +81,23 @@ def test_money_and_percent_cleaned(tmp_path):
     f = write(tmp_path, 'week,spend,rate\n1,"$1,000",10%\n2,"$2,000",20%\n3,"$3,000",30%\n')
     r = run(f)
     assert r.returncode == 0 and "1.00" in r.stdout
+
+
+def test_results_from_csv_text_matches_the_json_file(tmp_path):
+    """Apps call the engine on CSV text and get the same results.json the CLI writes."""
+    src = ROOT / "examples" / "platform_vs_crm.csv"
+    out = tmp_path / "r.json"
+    assert run(src, "--json", out).returncode == 0
+    res = correlate.results_from_csv_text(src.read_text(), source=src.name)
+    assert res == json.loads(out.read_text())
+
+
+def test_results_from_csv_text_lag_and_drop():
+    text = (ROOT / "examples" / "platform_vs_crm.csv").read_text()
+    res = correlate.results_from_csv_text(text, source="x.csv", lag=1, drop=[text.splitlines()[1].split(",")[0]])
+    assert res["lag"] == 1 and len(res["dropped"]) == 1 and res["rows"] == len(text.strip().splitlines()) - 2
+
+
+def test_bad_csv_text_raises_a_plain_reason():
+    with pytest.raises(ValueError, match="not a number"):
+        correlate.results_from_csv_text("week,a,b\n1,2,x\n2,3,4\n", source="bad.csv")
